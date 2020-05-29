@@ -6,37 +6,19 @@ np.random.seed(0)
 class layer(nn.Module):
     def __init__(self):
         super(layer,self).__init__()
-
-        class Mtl(nn.Module):
-            def __init__(self):
-                super(Mtl, self).__init__()
-                self.sigma1 = nn.Parameter(torch.zeros(1))
-                self.sigma2 = nn.Parameter(torch.zeros(1))
-                self.log_vars = [self.sigma1,self.sigma2]
-
-            def forward(self,inputs):
-                ys_true = inputs[:2]
-                ys_pred = inputs[2:]
-                # log_vars = [nn.parameter(torch.zeros(1)),nn.parameter(torch.zeros(1))]
-                loss=0
-                for y_true, y_pred, log_var in zip(ys_true, ys_pred, self.log_vars):
-                    pre = torch.exp(-log_var)
-                    loss += torch.sum(pre*(y_true-y_pred)**2+log_var,-1)
-                loss = torch.mean(loss)
-                return loss
         self.linear1 = nn.Sequential(
             nn.Linear(1,1024),
             nn.ReLU()
         )
         self.y1 = nn.Linear(1024,1)
         self.y2 = nn.Linear(1024,1)
-        self.out = Mtl()
-    def forward(self,X,Y1,Y2):
+        self.sigma1 = nn.Parameter(torch.zeros(1))
+        self.sigma2 = nn.Parameter(torch.zeros(1))
+    def forward(self,X):
         x=self.linear1(X)
         y_1=self.y1(x)
         y_2=self.y2(x)
-        out=self.out([Y1,Y2,y_1,y_2])
-        return out
+        return [y_1,y_2],[self.sigma1,self.sigma2]
 
 
 N = 100
@@ -57,6 +39,15 @@ def gen_data(N):
     sigma2 = 1e0  # ground truth
     Y2 = X.dot(w2) + b2 + sigma2 * np.random.randn(N, D2)
     return X, Y1, Y2
+def mlt(y_pred,y_true,log_vars):
+    ys_true = y_pred
+    ys_pred = y_true
+    loss=0
+    for y_true, y_pred, log_var in zip(ys_true, ys_pred, log_vars):
+        pre = torch.exp(-log_var)
+        loss += torch.sum(pre*(y_true-y_pred)**2+log_var,-1)
+    loss = torch.mean(loss)
+    return loss
 X, Y1, Y2 = gen_data(N)
 X=torch.from_numpy(X).type(torch.FloatTensor)
 Y1=torch.from_numpy(Y1).type(torch.FloatTensor)
@@ -67,16 +58,17 @@ optimizer = torch.optim.Adam(model.parameters(),lr=0.01)
 for i in range(nb_epoch):
     tmp=0
     step=0
-    loss=model(X,Y1,Y2)
+    y_pred,log_vars=model(X)
+    loss=mlt(y_pred,[Y1,Y2],log_vars)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
     if i%100==0:
         print("At epoch %d, Loss: %.4f" % (i, loss))
-        print('sigma1: ',model.state_dict()['out.sigma1'])
-        print('sigma2: ',model.state_dict()['out.sigma2'])
-sigma1 = model.state_dict()['out.sigma1']
-sigma2 = model.state_dict()['out.sigma2']
+        print('sigma1: ',model.state_dict()['sigma1'])
+        print('sigma2: ',model.state_dict()['sigma2'])
+sigma1 = model.state_dict()['sigma1']
+sigma2 = model.state_dict()['sigma2']
 print(torch.exp(sigma1)**0.5)
 print(torch.exp(sigma2)**0.5)
 
